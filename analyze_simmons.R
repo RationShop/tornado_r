@@ -1,15 +1,6 @@
 # attempt to reproduce Simmons et al 2013 results
 
-# read raw data
-torn <- read.csv("data/1950-2012_torn.csv", header = FALSE, sep = ",", as.is = TRUE)
-# add column names based on documentation
-colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE", 
-                    "STATE", "FIPS", "STATENUMBER", "FSCALE", "INJURIES", 
-                    "FATALITIES", "LOSS", "CROPLOSS", "SLAT", "SLON", "ELAT", 
-                    "ELON", "LENGTH", "WIDTH", "NS", "SN", "SG", "F1", "F2", 
-                    "F3", "F4")
-
-torn$id <- paste(torn$YEAR, torn$OM, torn$NS, sep = "-")
+source("lib_torn.R")
 
 # data used by Simmons et al, from 1996-2011
 torn_simm <- subset(torn, YEAR >= 1996 & YEAR <= 2011)
