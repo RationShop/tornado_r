@@ -4,9 +4,13 @@ library(plyr)
 
 read_torn_data <- function() {
   # read raw data
-  torn <- read.csv("data/1950-2012_torn.csv", header = FALSE, sep = ",", as.is = TRUE)
+  torn <- read.csv("data/1950-2012_torn.csv", 
+                   header = FALSE, 
+                   sep = ",", 
+                   as.is = TRUE)
   
-  # add column names based on documentation
+  # add column names, similar to documentation and 
+  # same as those used by Elsner et al - 
   colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE", 
                       "STATE", "FIPS", "STATENUMBER", "FSCALE", "INJURIES", 
                       "FATALITIES", "LOSS", "CROPLOSS", "SLAT", "SLON", "ELAT", 
@@ -16,8 +20,8 @@ read_torn_data <- function() {
   # a tornado spanning multiple counties is listed separately for each county
   # thus, a single tornado could appear multiple times
   # identify unique tornadoes based on YEAR, OM and NS
-  # check for existence of tornadoes spanning multiple years (i.e, begin on 12/31 
-  # and end on 1/1); need to check only those with NS > 1
+  # check for existence of tornadoes spanning multiple years (i.e, those which
+  # begin on 12/31 and end on 1/1); need to check only those with NS > 1
   dec31 <- subset(torn, MONTH == 12 & DAY == 31 & NS != 1)
   jan01 <- subset(torn, MONTH == 1 & DAY == 1 & NS != 1)
   if (nrow(dec31) > 0 & nrow(jan01) > 0) {
@@ -29,7 +33,7 @@ read_torn_data <- function() {
 }
 
 # function to summarize counts of tornadoes desired stats by year and month
-spc_summary_counts <- function(in_df) {
+count_unique_tornadoes <- function(in_df) {
   
   # number of unique tornadoes per month
   mon_totals <- ddply(.data = in_df, 
@@ -37,8 +41,16 @@ spc_summary_counts <- function(in_df) {
                       .fun = function(x_df) length(unique(x_df$id)), 
                       .drop = FALSE)
   
+  # some months dont have data; assign NAs to those months
+  mon_empty <- data.frame(MONTH = c(1:12),
+                          V1 = rep(NA, 12),
+                          stringsAsFactors = FALSE)
+  mon_totals <- merge(mon_totals, mon_empty, by = "MONTH", all = TRUE)
+  mon_totals <- mon_totals[, c(1,2)]
+  mon_totals <- mon_totals[order(mon_totals$MONTH), ]
+  
   # output matrix
-  out_mat <- c(nrow(in_df), length(unique(in_df$id)), mon_totals$V1)
+  out_mat <- c(nrow(in_df), length(unique(in_df$id)), mon_totals[, 2])
   out_mat <- matrix(out_mat, nrow = 1)
   colnames(out_mat) <- c("N_total", "N_unique", month.abb)  
   

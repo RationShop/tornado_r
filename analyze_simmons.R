@@ -3,20 +3,20 @@
 source("lib_torn.R")
 
 # data used by Simmons et al, from 1996-2011
-torn_simm <- subset(torn, YEAR >= 1996 & YEAR <= 2011)
+torn <- subset(torn, YEAR >= 1996 & YEAR <= 2011)
 
 # loss in dollars, current values
 # combine loss and croploss
-torn_simm$tot_loss <- (torn_simm$LOSS + torn_simm$CROPLOSS) * 10^6
+torn$tot_loss <- (torn$LOSS + torn$CROPLOSS) * 10^6
 
 # categorize loss using 1950-1995 bins (0 to 9)
 loss_breaks <- c(0, 5 * 10^(1:9))
 loss_labels <- paste0("Bin", (1:9))
-torn_simm$loss_cat <- cut(torn_simm$tot_loss, 
-                          breaks = loss_breaks, 
-                          labels = loss_labels,
-                          include.lowest = TRUE,
-                          right = FALSE)
+torn$loss_cat <- cut(torn$tot_loss, 
+                     breaks = loss_breaks, 
+                     labels = loss_labels,
+                     include.lowest = TRUE,
+                     right = FALSE)
 
 # summary stats used by Simmons et al. for each loss category bin
 simm_summary <- function(in_df, exclude_repeats = FALSE) {
@@ -37,27 +37,26 @@ simm_summary <- function(in_df, exclude_repeats = FALSE) {
              stringsAsFactors = FALSE)
 }
 
-out_stats <- do.call("rbind", by(torn_simm, 
-                                 INDICES = torn_simm$loss_cat, 
+out_stats <- do.call("rbind", by(torn, 
+                                 INDICES = torn$loss_cat, 
                                  FUN = simm_summary))
 out_stats
 
 
-out_stats <- do.call("rbind", by(torn_simm, 
-                                 INDICES = torn_simm$loss_cat, 
+out_stats <- do.call("rbind", by(torn, 
+                                 INDICES = torn$loss_cat, 
                                  FUN = simm_summary,
                                  exclude_repeats = TRUE))
 out_stats
 
 
 # data used by Simmons et al 2013, for 1950-2011
-torn_simm <- subset(torn, YEAR >= 1950 & YEAR <= 2011)
-by(torn_simm, INDICES = torn_simm$FSCALE, FUN = function (x) length(unique(x$id)))
-torn_simm <- subset(torn, YEAR >= 1950 & YEAR <= 1973)
-by(torn_simm, INDICES = torn_simm$FSCALE, FUN = function (x) length(unique(x$id)))
-torn_simm <- subset(torn, YEAR >= 1974 & YEAR <= 1999)
-by(torn_simm, INDICES = torn_simm$FSCALE, FUN = function (x) length(unique(x$id)))
-torn_simm <- subset(torn, YEAR >= 2000 & YEAR <= 2011)
-by(torn_simm, INDICES = torn_simm$FSCALE, FUN = function (x) length(unique(x$id)))
-
+torn <- subset(torn, YEAR >= 1950 & YEAR <= 2011)
+by(torn, INDICES = torn$FSCALE, FUN = function (x) length(unique(x$id)))
+torn <- subset(torn, YEAR >= 1950 & YEAR <= 1973)
+by(torn, INDICES = torn$FSCALE, FUN = function (x) length(unique(x$id)))
+torn <- subset(torn, YEAR >= 1974 & YEAR <= 1999)
+by(torn, INDICES = torn$FSCALE, FUN = function (x) length(unique(x$id)))
+torn <- subset(torn, YEAR >= 2000 & YEAR <= 2011)
+by(torn, INDICES = torn$FSCALE, FUN = function (x) length(unique(x$id)))
 

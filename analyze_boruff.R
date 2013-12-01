@@ -4,16 +4,14 @@ source("lib_torn.R")
 
 torn <- read_torn_data()
 
+# time period used by Boruff et al
 torn <- subset(torn, YEAR %in% seq(1950, 1999))
 torn <- droplevels(torn)
 # some states excluded by Boruff et al
 torn <- subset(torn, !(STATE %in% c("AK", "HI", "PR")))
 # levels(as.factor(torn$STATE))
 
-# stats required by year and month; convert to factors
-torn$YEAR <- as.factor(torn$YEAR)
-torn$MONTH <- as.factor(torn$MONTH)
-
+# summary on injuries and fatalities
 torn_fat <- aggregate(cbind(FATALITIES, INJURIES) ~ id, data = torn, FUN = max)
 torn_fat$YEAR <- as.numeric(substr(torn_fat$id, 1, 4))
 torn_fat$MONTH <- as.numeric(substr(torn_fat$id, 6, 6))
@@ -27,6 +25,9 @@ torn_fat$time_cat <- cut(torn_fat$YEAR,
                         labels = time_labels,
                         include.lowest = TRUE,
                         right = FALSE)
+
 aggregate(cbind(FATALITIES, INJURIES) ~ time_cat, data = torn_fat, FUN = sum)
 
-ddply(.data = torn_fat, .variables = .(time_cat), .fun = spc_summary_counts)
+# summary on counts of tornadoes
+ddply(.data = torn_fat, .variables = .(time_cat), .fun = count_unique_tornadoes)
+
