@@ -13,10 +13,6 @@ colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE",
                     "ELON", "LENGTH", "WIDTH", "NS", "SN", "SG", "F1", "F2", 
                     "F3", "F4")
 
-# stats required by year and month; convert to factors
-torn$YEAR <- as.factor(torn$YEAR)
-torn$MONTH <- as.factor(torn$MONTH)
-
 # a tornado spanning multiple counties is listed separately for each county
 # thus, a single tornado could appear multiple times
 # identify unique tornadoes based on YEAR, OM and NS
@@ -27,14 +23,18 @@ jan01 <- subset(torn, MONTH == 1 & DAY == 1 & NS != 1)
 if (nrow(dec31) > 0 & nrow(jan01) > 0) {
   stop("check! unique id assignment may not be accurate!")
 }
-torn$id <- paste(torn$YEAR, torn$OM, torn$NS, sep = "-")
+torn$id <- paste(torn$YEAR, torn$MONTH, torn$OM, torn$NS, sep = "-")
 
+
+# stats required by year and month; convert to factors
+torn$YEAR <- as.factor(torn$YEAR)
+torn$MONTH <- as.factor(torn$MONTH)
 
 #-------------------------------------------------------------------------------
 # checks to ensure above id assignment process is valid
 
 # function to summarize desired stats by year and month
-spc_summary <- function(in_df) {
+spc_summary_counts <- function(in_df) {
   
   # number of unique tornadoes per month
   mon_totals <- ddply(.data = in_df, 
@@ -52,29 +52,45 @@ spc_summary <- function(in_df) {
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # compare with data from http://www.spc.noaa.gov/archive/tornadoes/ustdbmy.html
-out_stats <- ddply(.data = torn, .variables = .(YEAR), .fun = spc_summary)
+out_stats <- ddply(.data = torn, .variables = .(YEAR), .fun = spc_summary_counts)
 out_stats
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# compare with Boruff et al, 2003, Tornado Hazards in the US, Climate Research
-torn_boruff <- subset(torn, YEAR %in% seq(1950, 1999))
-torn_boruff <- droplevels(torn_boruff)
-# some states excluded by Boruff et al
-torn_boruff <- subset(torn_boruff, !(STATE %in% c("AK", "HI", "PR")))
-# levels(as.factor(torn_boruff$STATE))
+est_fat <- aggregate(cbind(FATALITIES, INJURIES) ~ id, data = torn, FUN = max)
+est_fat$YEAR <- as.numeric(substr(est_fat$id, 1, 4))
 
-# decades used by Boruff et al.
-time_breaks <- c(1950, 1960, 1970, 1980, 1990, 2000)
-time_labels <- c("1950s", "1960s", "1970s", "1980s", "1990s")
-# convert factor to numeric for numeric data
-Fn_Factor_To_Numeric <- function(in_fac) {
-  return (as.numeric(levels(in_fac))[in_fac])
-}
-torn_boruff$time_cat <- cut(Fn_Factor_To_Numeric(torn_boruff$YEAR), 
-                            breaks = time_breaks, 
-                            labels = time_labels,
-                            include.lowest = TRUE,
-                            right = FALSE)
+time_breaks <- c(1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020)
+time_labels <- c("1950s", "1960s", "1970s", "1980s", "1990s", "2000s","2010s")
 
-out_stats <- ddply(.data = torn_boruff, .variables = .(time_cat), .fun = spc_summary)
-out_stats
+est_fat$time_cat <- cut(est_fat$YEAR, 
+                        breaks = time_breaks, 
+                        labels = time_labels,
+                        include.lowest = TRUE,
+                        right = FALSE)
+aggregate(cbind(FATALITIES, INJURIES) ~ time_cat, data = est_fat, FUN = sum)
+aggregate(cbind(FATALITIES, INJURIES) ~ YEAR, data = est_fat, FUN = sum)
+
+1421 + 942 + 998 + 522 + 581
+
+# #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# # compare with Boruff et al, 2003, Tornado Hazards in the US, Climate Research
+# torn_boruff <- subset(torn, YEAR %in% seq(1950, 1999))
+# torn_boruff <- droplevels(torn_boruff)
+# # some states excluded by Boruff et al
+# torn_boruff <- subset(torn_boruff, !(STATE %in% c("AK", "HI", "PR")))
+# # levels(as.factor(torn_boruff$STATE))
+# 
+# # decades used by Boruff et al.
+# time_breaks <- c(1950, 1960, 1970, 1980, 1990, 2000)
+# time_labels <- c("1950s", "1960s", "1970s", "1980s", "1990s")
+# # convert factor to numeric for numeric data
+# Fn_Factor_To_Numeric <- function(in_fac) {
+#   return (as.numeric(levels(in_fac))[in_fac])
+# }
+# torn_boruff$time_cat <- cut(Fn_Factor_To_Numeric(torn_boruff$YEAR), 
+#                             breaks = time_breaks, 
+#                             labels = time_labels,
+#                             include.lowest = TRUE,
+#                             right = FALSE)
+# 
+# out_stats <- ddply(.data = torn_boruff, .variables = .(time_cat), .fun = spc_summary)
+# out_stats
