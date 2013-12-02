@@ -1,19 +1,12 @@
-# analyze data from SPC to match statistics produced by SPC
+# 
 
 source("lib_torn.R")
 
 torn <- read_torn_data()
 
-# stats required by year and month; convert to factors
-torn$YEAR <- as.factor(torn$YEAR)
-torn$MONTH <- as.factor(torn$MONTH)
+# analyze data from SPC to match statistics produced by SPC
+out_spc <- rep_stats_SPC(torn)
 
-# compare with data from http://www.spc.noaa.gov/archive/tornadoes/ustdbmy.html
-out_stats <- ddply(.data = torn, .variables = .(YEAR), .fun = count_unique_tornadoes)
-out_stats
-
-torn_fat <- aggregate(cbind(FATALITIES, INJURIES) ~ id, data = torn, FUN = max)
-torn_fat$YEAR <- as.numeric(substr(torn_fat$id, 1, 4))
-
-aggregate(cbind(FATALITIES, INJURIES) ~ YEAR, data = torn_fat, FUN = sum)
+# 
+out_boruff <- rep_stats_Boruff(torn)
 
