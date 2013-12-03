@@ -1,4 +1,4 @@
-normtornado_r
+tornado_r
 =============
 
-R code towards calculating normalized tornado damage in the United States
+R code towards analyzing tornado data from the US Storm Prediction Center. 
