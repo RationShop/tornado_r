@@ -13,4 +13,5 @@ out_boruff <- rep_stats_Boruff(torn)
 # reproduce stats produced by Simmons et al 2013
 out_simmons <- rep_stats_Simmons(torn)
 
-
+# reproduce stats produced by Verbout et al 2006
+out_verbout <- rep_stats_Verbout(torn)

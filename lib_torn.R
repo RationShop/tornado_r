@@ -9,7 +9,7 @@ read_torn_data <- function() {
                    sep = ",", 
                    as.is = TRUE)
   
-  # add column names, similar to documentation and 
+  # add column names similar to documentation and 
   # same as those used by Elsner et al - http://rpubs.com/jelsner/4205
   # "A spatial point process model for violent tornado ...", 2013
   colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE", 
@@ -32,32 +32,36 @@ read_torn_data <- function() {
   }
   torn$id <- paste(torn$YEAR, torn$MONTH, torn$OM, torn$NS, sep = "-")
   
-#   # convert month to factor for use in summary stats
-#   torn$MONTH <- as.factor(torn$MONTH)
-  
   return (torn)
 }
 
 # function to summarize counts of unique number of tornadoes by year and month
-count_unique_tornadoes <- function(in_df) {
+count_unique_tornadoes <- function(in_df, monthly_stats = TRUE) {
   
   require(plyr)
   
-  # some months dont have data; assign NAs to those months
-  mon_totals <- expand.grid(MONTH = seq(1, 12), stringsAsFactors = FALSE)
-  
-  # number of unique tornadoes per month
-  mon_torn <- ddply(.data = in_df, 
-                    .variables = .(MONTH),
-                    .fun = function(x_df) length(unique(x_df$id)), 
-                    .drop = FALSE)
-  
-  mon_totals <- merge(mon_totals, mon_torn, by = "MONTH", all = TRUE)
-  
-  # output matrix
-  out_mat <- c(nrow(in_df), length(unique(in_df$id)), mon_totals$V1)
-  out_mat <- matrix(out_mat, nrow = 1)
-  colnames(out_mat) <- c("N_total", "N_unique", month.abb)  
+  if (monthly_stats) {
+    # some months dont have data; assign NAs to those months
+    mon_totals <- expand.grid(MONTH = seq(1, 12), stringsAsFactors = FALSE)
+    
+    # number of unique tornadoes per month
+    mon_torn <- ddply(.data = in_df, 
+                      .variables = .(MONTH),
+                      .fun = function(x_df) length(unique(x_df$id)), 
+                      .drop = FALSE)
+    
+    mon_totals <- merge(mon_totals, mon_torn, by = "MONTH", all = TRUE)
+    
+    # output matrix
+    out_mat <- c(nrow(in_df), length(unique(in_df$id)), mon_totals$V1)
+    out_mat <- matrix(out_mat, nrow = 1)
+    colnames(out_mat) <- c("N_total", "N_unique", month.abb)  
+  } else {
+    # output matrix
+    out_mat <- c(nrow(in_df), length(unique(in_df$id)))
+    out_mat <- matrix(out_mat, nrow = 1)
+    colnames(out_mat) <- c("N_total", "N_unique")      
+  }
   
   return (out_mat)
 }
@@ -121,7 +125,8 @@ rep_stats_Boruff <- function(torn) {
   # summary on counts of tornadoes
   event_stats <- ddply(.data = torn_fat, 
                        .variables = .(time_cat), 
-                       .fun = count_unique_tornadoes)
+                       .fun = count_unique_tornadoes,
+                       monthly_stats = FALSE)
   
   return (list(event_stats = event_stats, fat_stats = fat_stats))
 }
@@ -190,4 +195,49 @@ rep_stats_Simmons <- function(torn) {
   
   return (list(event_stats = event_stats, fscale_stats = fscale_stats))
 }
+
+
+# function to reproduce stats produced by Verbout et al
+rep_stats_Verbout <- function(torn) {
+  require(plyr)
+  
+  stopifnot(exists("torn"))
+
+  # compare with Verbout et al 2006, Figure 1
+  events_all <- ddply(.data = torn, 
+                      .variables = .(YEAR), 
+                      .fun = count_unique_tornadoes,
+                      monthly_stats = FALSE)
+  
+  # F1 or greater events
+  events_f1 <- ddply(.data = subset(torn, !(FSCALE %in% c("-9", "0"))), 
+                     .variables = .(YEAR), 
+                     .fun = count_unique_tornadoes,
+                     monthly_stats = FALSE)
+
+  # F2 or greater events
+  events_f2 <- ddply(.data = subset(torn, !(FSCALE %in% c("-9", "0", "1"))), 
+                     .variables = .(YEAR), 
+                     .fun = count_unique_tornadoes,
+                     monthly_stats = FALSE)
+  
+  # F3 or greater events
+  events_f3 <- ddply(.data = subset(torn, !(FSCALE %in% c("-9", "0", "1", "2"))), 
+                     .variables = .(YEAR), 
+                     .fun = count_unique_tornadoes,
+                     monthly_stats = FALSE)
+  
+  # F4 or greater events
+  events_f4 <- ddply(.data = subset(torn, !(FSCALE %in% c("-9", "0", "1", "2", "3"))), 
+                     .variables = .(YEAR), 
+                     .fun = count_unique_tornadoes,
+                     monthly_stats = FALSE)
+  
+  events_stats <- cbind(events_all, events_f1, events_f2, events_f3, events_f4)
+  events_stats <- events_stats[, c(1, 3, 6, 9, 12, 15)]
+  colnames(events_stats) <- c("YEAR", "events_all", "F1+", "F2+", "F3+", "F4+")                              
+  
+  return (events_stats)
+}
+
 
