@@ -16,11 +16,11 @@ Tornado data available from the NOAA [Storm Prediction Center](http://www.spc.no
 Specific Objectives:
 -----------
 1. Create an R package 
- * The package would come with raw and cleaned tornado data
+ * The package would come with raw and cleaned Tornado data
 2. Functionality provided by the R package would include:
- * reproduce summary statistics presented by literature studies. 
- * adjustment of historical monetary losses for inflation and other factors.
- * creation of stochastic models of Tornado hazard, based on existing literature.
+ * reproduction/replication of summary statistics presented by literature studies. 
+ * adjustment of historical monetary losses for inflation and other factors, based on literature.
+ * creation of stochastic and probabilistic models of Tornado hazard, based on literature.
 3. Extend the above to Tornado data from other parts of the world.
 
 
