@@ -12,13 +12,12 @@ lapply(out_spc, head)
 out_boruff <- rep_stats_Boruff(torn)
 lapply(out_boruff, head)
 
-# reproduce stats produced by Simmons et al 2013
-out_simmons <- rep_stats_Simmons(torn)
-lapply(out_simmons, head)
-
 # reproduce stats produced by Verbout et al 2006
 out_verbout <- rep_stats_Verbout(torn)
 head(out_verbout)
 
+# reproduce stats produced by Simmons et al 2013
+out_simmons <- rep_stats_Simmons(torn)
+lapply(out_simmons, head)
 
 
