@@ -1,0 +1,103 @@
+The Storm Prediction Center published stats on number of tornadoes by year and month and also the number of fatalities and injuries. See SPC's stats [here](http://www.spc.noaa.gov/archive/tornadoes/ustdbmy.html) and [here](http://www.spc.noaa.gov/climo/online/monthly/newm.html). The below code successfully reproduces most of the numbers from SPC. The discrepancy could be due to the differences in Tornado data used (due to regular quality control the latest data used here may not be identical to the one used by SPC).
+
+Read raw data add column names similar to those used by [Elsner et al 2013](http://rpubs.com/jelsner/4205) and consistent with [documentation](http://www.spc.noaa.gov/gis/svrgis/). 
+
+```{r}
+library(plyr)
+
+torn <- read.csv("data/1950-2012_torn.csv", 
+                 header = FALSE, 
+                 sep = ",", 
+                 as.is = TRUE)
+
+colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE", 
+                    "STATE", "FIPS", "STATENUMBER", "FSCALE", "INJURIES", 
+                    "FATALITIES", "LOSS", "CROPLOSS", "SLAT", "SLON", "ELAT", 
+                    "ELON", "LENGTH", "WIDTH", "NS", "SN", "SG", "F1", "F2", 
+                    "F3", "F4")
+```
+
+Tornadoes spanning multiple counties are listed separately for each county. Thus, a single tornado could appear multiple times. Identify unique tornadoes using YEAR, OM and NS. Check for uniqueness; especially, tornadoes spanning multiple years (i.e, those which begin on 12/31 and end on 1/1); need to check only those with NS > 1.
+
+```{r}
+dec31 <- subset(torn, MONTH == 12 & DAY == 31 & NS != 1)
+jan01 <- subset(torn, MONTH == 1 & DAY == 1 & NS != 1)
+if (nrow(dec31) > 0 & nrow(jan01) > 0) {
+  stop("check! unique id assignment may not be accurate!")
+}
+torn$id <- paste(torn$YEAR, torn$MONTH, torn$OM, torn$NS, sep = "-")
+```
+
+Formatted data for use in subsequent analysis.
+
+```{r}
+str(torn)
+
+head(torn)
+tail(torn)
+```
+
+Function to summarize counts of unique number of tornadoes by year and month.
+
+```{r}
+count_unique_tornadoes <- function(in_df, monthly_stats = TRUE) {
+  
+  require(plyr)
+  
+  if (monthly_stats) {
+    # some months dont have data; assign NAs to those months
+    mon_totals <- expand.grid(MONTH = seq(1, 12), stringsAsFactors = FALSE)
+    
+    # number of unique tornadoes per month
+    mon_torn <- ddply(.data = in_df, 
+                      .variables = .(MONTH),
+                      .fun = function(x_df) length(unique(x_df$id)), 
+                      .drop = FALSE)
+    
+    mon_totals <- merge(mon_totals, mon_torn, by = "MONTH", all = TRUE)
+    
+    # output matrix
+    out_mat <- c(nrow(in_df), length(unique(in_df$id)), mon_totals$V1)
+    out_mat <- matrix(out_mat, nrow = 1)
+    colnames(out_mat) <- c("N_total", "N_unique", month.abb)  
+  } else {
+    # output matrix
+    out_mat <- c(nrow(in_df), length(unique(in_df$id)))
+    out_mat <- matrix(out_mat, nrow = 1)
+    colnames(out_mat) <- c("N_total", "N_unique")      
+  }
+  
+  return (out_mat)
+}
+```
+
+Reproduce stats on number of unique events produced by [SPC](http://www.spc.noaa.gov/archive/tornadoes/ustdbmy.html).
+
+```{r}
+
+event_stats <- ddply(.data = torn, 
+                     .variables = .(YEAR), 
+                     .fun = count_unique_tornadoes)
+
+str(event_stats)
+
+event_stats
+```
+
+Reproduce stats on fatalities and injuries produced by [SPC](http://www.spc.noaa.gov/archive/tornadoes/ustdbmy.html). Note that Tornado segments could each have different fatalities and injuries.The data row corresp to the overall event has the max fatalities/injuries.
+
+```{r}
+torn_fat <- aggregate(cbind(FATALITIES, INJURIES) ~ id, data = torn, FUN = max)
+torn_fat$YEAR <- as.numeric(substr(torn_fat$id, 1, 4))
+  
+# aggregate by year and month
+fat_stats <- aggregate(cbind(FATALITIES, INJURIES) ~ YEAR, 
+                       data = torn_fat, 
+                       FUN = sum)
+  
+
+str(fat_stats)
+
+fat_stats
+```
+
