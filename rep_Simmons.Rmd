@@ -1,0 +1,110 @@
+Kevin Simmons and others used data from the Storm Prediction Center to normalize damages from tornadoes in the United States (Simmons, Kevin M., Daniel Sutter, and Roger Pielke. "Normalized tornado damage in the United States: 1950–2011." Environmental Hazards 12.2 (2013): 132-147.). 
+
+Initially, the goal was to reproduce the entire analysis of Simmon et al. However, after trying to reproduce Table 2 of the paper, on summary statistics of 1996-2011, it appears that there are several errors with the analysis of Simmons et al.
+
+Read raw data add column names similar to those used by [Elsner et al 2013](http://rpubs.com/jelsner/4205) and consistent with [documentation](http://www.spc.noaa.gov/gis/svrgis/). 
+
+```{r}
+library(plyr)
+
+torn <- read.csv("data/1950-2012_torn.csv", 
+                 header = FALSE, 
+                 sep = ",", 
+                 as.is = TRUE)
+
+colnames(torn) <- c("OM", "YEAR", "MONTH", "DAY", "DATE", "TIME", "TIMEZONE", 
+                    "STATE", "FIPS", "STATENUMBER", "FSCALE", "INJURIES", 
+                    "FATALITIES", "LOSS", "CROPLOSS", "SLAT", "SLON", "ELAT", 
+                    "ELON", "LENGTH", "WIDTH", "NS", "SN", "SG", "F1", "F2", 
+                    "F3", "F4")
+```
+
+Tornadoes spanning multiple counties are listed separately for each county. Thus, a single tornado could appear multiple times. Identify unique tornadoes using YEAR, OM and NS. Check for uniqueness; especially, tornadoes spanning multiple years (i.e, those which begin on 12/31 and end on 1/1); need to check only those with NS > 1.
+
+```{r}
+dec31 <- subset(torn, MONTH == 12 & DAY == 31 & NS != 1)
+jan01 <- subset(torn, MONTH == 1 & DAY == 1 & NS != 1)
+if (nrow(dec31) > 0 & nrow(jan01) > 0) {
+  stop("check! unique id assignment may not be accurate!")
+}
+torn$id <- paste(torn$YEAR, torn$MONTH, torn$OM, torn$NS, sep = "-")
+```
+
+Discard rows with SN = 0 since these are for the overall event when multiple segments are present.
+ 
+```{r}
+torn <- subset(torn, SN != 0)
+
+str(torn)
+
+head(torn)
+tail(torn)
+```
+
+Time period used by Simmons et al.
+
+```{r}
+time_breaks <- c(1950, 1974, 2000, 2012, 2020)
+time_labels <- c("1950-73", "1974-99", "2000-11", "2012-")
+  
+torn$time_cat <- cut(torn$YEAR, 
+                     breaks = time_breaks, 
+                     labels = time_labels,
+                     include.lowest = TRUE,
+                     right = FALSE)
+```
+
+Summary stats presented by Simmons et al in Table 3 of their paper uses F-scale category. The SPC data has -9 assign ed to some events. Assume these correspond to 0. Simmons et al did not specify how these -9 values were treated. The values below are very close and consistent with the number of tornadoes by time period reported in Table 3 of Simmons et al.
+
+```{r}
+torn$FSCALE[torn$FSCALE == -9] <- 0
+fscale_stats <- ddply(torn[, c("FSCALE", "time_cat")], .(FSCALE), table)
+
+fscale_stats
+```
+
+Losses in dollars (current values) was combined with croploss, consistent with Simmons et al. These loss values were then categorized into bins (0 to 9) based on SPC damage intervals (Table 1 of Simmons et al).
+
+```{r}
+torn$tot_loss <- (torn$LOSS + torn$CROPLOSS) * 10^6
+  
+# categorize loss using 1950-1995 bins (0 to 9)
+loss_breaks <- c(0, 5 * 10^(1:9))
+loss_labels <- paste0("Bin", (1:9))
+torn$loss_cat <- cut(torn$tot_loss, 
+                     breaks = loss_breaks, 
+                     labels = loss_labels,
+                     include.lowest = TRUE,
+                     right = FALSE)
+
+head(torn)
+```
+
+Reproduce summary stats produced by Simmons et al. in Table 2 of their paper. For each loss category bin, number of events, median, mean, min, max and standard deviation were calculated. Data from 1996-2011 only was used, and also millions of dollars, consistent with Simmons et al.
+
+```{r}
+simmons_events_summary <- function(in_df) {
+        
+  data.frame(N = nrow(in_df),
+             Median = median(in_df$tot_loss) / 10^6,
+             Mean = mean(in_df$tot_loss) / 10^6,
+             Min = min(in_df$tot_loss) / 10^6,
+             Max = max(in_df$tot_loss) / 10^6,
+             SD = sd(in_df$tot_loss) / 10^6,
+             stringsAsFactors = FALSE)
+}
+
+torn <- subset(torn, YEAR >= 1996 & YEAR <= 2011)
+event_stats <- ddply(.data = torn, 
+                     .variables = .(loss_cat), 
+                     .fun = simmons_events_summary)
+
+options(scipen = 10)
+event_stats
+```
+
+Issues
+--------
+
+* The "Max" value in the above table and in Table 2 of Simmons et al., by definition, should not exceed the upper bound of the damage interval reported in Table 1. However, "Max" values in Simmons et al exceed this upper bound. For instance, for Bin 7, the SPC damage interval ranges from 5 million to 50 million. But the "Max" reported in Table 2 of the paper is 69.3 million.
+* Since the "Mean"" values from Table 2, which appear to be erroneous, form the basis for the remainder of the analysis by Simmons et al., it appears that the remainder of the analysis is erroneous.
