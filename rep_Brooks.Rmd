@@ -128,7 +128,7 @@ print(gfx_line)
 ```
 
 
-### Figure 3
+### Figure 3, Temporal Smoothing
 
 Estimate probability of a tornado day for a leap year, consistent with Brooks et al. Estimate the number of a time a day of the year (doy) occurs in the period 1980-1999. Use 2012 as a reference leap year for the inclusion of Feb 29. One could accomplish the below task using "chron" or "lubridate" package; but, for now I am trying to avoid the importing of these packages.
 
@@ -148,10 +148,10 @@ Convert doy_freq to probability and check for probs outside of 0-1 interval. Als
 time_span <- 1999 - 1980 + 1
 doy_prob <- as.data.frame(table(doy_freq), stringsAsFactors = FALSE)
 colnames(doy_prob) <- c("doy", "freq")
-# fix for Feb 29
-doy_prob$prob <- ifelse(doy_prob$doy != 60, 
-                        doy_prob$freq / time_span,
-                        doy_prob$freq / 5) # 5 leap years in 1980-1999
+# fix for Feb 29, 5 leap years in 1980-1999
+doy_prob$span <- ifelse(doy_prob$doy != 60, time_span, 5)
+doy_prob$prob <- doy_prob$freq / doy_prob$span
+
 # add 0s for missing days
 miss_days <- data.frame(doy = as.character(seq(1:366)),
                         date = seq(as.Date("2012-01-01"), as.Date("2012-12-31"), by = "day"),
@@ -159,6 +159,7 @@ miss_days <- data.frame(doy = as.character(seq(1:366)),
 doy_prob <- merge(doy_prob, miss_days, by = "doy", all = TRUE, sort = FALSE)
 doy_prob$prob[is.na(doy_prob$prob)] <- 0
 doy_prob$freq[is.na(doy_prob$freq)] <- 0
+doy_prob$span[is.na(doy_prob$span)] <- time_span
 
 # discard "2012"
 doy_prob$date <- substr(doy_prob$date, 6, 10)
@@ -176,18 +177,57 @@ gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
 print(gfx_line)
 ```
 
-Temporal smoothing, similar to Equation 1. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al.
+Temporal smoothing, similar to Equation 1. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Add bottom half the data at the top and top half of the data at the bottom. Test temporal smoothing of 5 and 15 days.
 
 ```{r}
-doy_prob2 <- rbind(doy_prob[184:366, ], doy_prob)
-doy_prob2 <- rbind(doy_prob2, doy_prob[1:183, ])
+doy_prob <- rbind(doy_prob[184:366, ], doy_prob, doy_prob[1:183, ])
 
-str(doy_prob2)
+sigma_t <- 5 # temporal smoother
+time_wts5 <- exp(-0.5 * (c(-183:182)/ sigma_t)^2) / (sqrt(2 * pi) * sigma_t)
+sigma_t <- 15 # temporal smoother
+time_wts15 <- exp(-0.5 * (c(-183:182)/ sigma_t)^2) / (sqrt(2 * pi) * sigma_t)
 
-doy
+doy_prob$freq_smooth5 <- 0
+doy_prob$freq_smooth15 <- 0
+for (eachDay in c(184:549)) {
+  beg_index <- eachDay - 183
+  end_index <- eachDay + 182
+  doy_prob$freq_smooth5[eachDay] <- sum(doy_prob$freq[beg_index:end_index] * time_wts5) 
+  doy_prob$freq_smooth15[eachDay] <- sum(doy_prob$freq[beg_index:end_index] * time_wts15) 
+}
 
+# discard half cycles at the top and bottom, added previously
+doy_prob <- doy_prob[c(184:549), ]
+# feb 29 span of 5 days does not apply after smoothing
+doy_prob$prob_smooth5 <- doy_prob$freq_smooth5 / time_span
+doy_prob$prob_smooth15 <- doy_prob$freq_smooth15 / time_span
 
+summary(doy_prob)
 ```
 
+Probability of a tornado day, similar to Figure 3 of Brooks et al.
 
+```{r}
+gfx_line <- ggplot(data = doy_prob, aes(x = as.numeric(doy), y = prob, group = 1))
+gfx_line <- gfx_line + geom_point()
+gfx_line <- gfx_line + geom_line(aes(y = prob_smooth5, colour = "red"))
+gfx_line <- gfx_line + geom_line(aes(y = prob_smooth15, colour = "blue"))
+gfx_line <- gfx_line + theme(legend.position = "none")
+gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
+print(gfx_line)
+```
+
+### Figure 4, Spatial Smoothing
+
+Add temporal smoothed info to the torn 1980-99 dataset.
+
+```{r}
+doy_prob <- doy_prob[, c("date", "freq_smooth15")]
+doy_prob$MONTH <- as.numeric(substr(doy_prob$date, 1, 2))
+doy_prob$DAY <- as.numeric(substr(doy_prob$date, 4, 5))
+doy_prob$date <- NULL
+colnames(doy_prob)[1] <- "freq_t"
+
+torn_8099 <- merge(torn_8099, doy_prob, by = c("MONTH", "DAY"), all = TRUE, sort = FALSE)
+```
 
