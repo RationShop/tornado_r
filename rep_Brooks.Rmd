@@ -177,7 +177,7 @@ gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
 print(gfx_line)
 ```
 
-Temporal smoothing, similar to Equation 1. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Add bottom half the data at the top and top half of the data at the bottom. Test temporal smoothing of 5 and 15 days.
+Temporal smoothing, similar to Equation 1. Test temporal smoothing using sigma values of of 5 and 15 days. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Split the 366 days into two 183-day long portions. Add bottom 183-day portion to the top of the data and the top 183-day portion to the bottom of the data. The result is a 732-day long data. Apply frequency smoothing to the middle 366 day of this 732-day data.
 
 ```{r}
 doy_prob <- rbind(doy_prob[184:366, ], doy_prob, doy_prob[1:183, ])
@@ -219,15 +219,18 @@ print(gfx_line)
 
 ### Figure 4, Spatial Smoothing
 
-Add temporal smoothed info to the torn 1980-99 dataset.
+Create a uniform lat-lon grid of 0.5 degrees spanning the mainland US. Brooks et al used a uniform grid of 80-km. But for ease of computation, visualization and storage a 0.5 degree grid is used. The results from this approach will be compared with those from Brooks et al, and if needed, a different spatial grid would be adopted.
 
 ```{r}
-doy_prob <- doy_prob[, c("date", "freq_smooth15")]
-doy_prob$MONTH <- as.numeric(substr(doy_prob$date, 1, 2))
-doy_prob$DAY <- as.numeric(substr(doy_prob$date, 4, 5))
-doy_prob$date <- NULL
-colnames(doy_prob)[1] <- "freq_t"
+lat_seq <- seq(24, 50, 0.5)
+lon_seq <- seq(-125, -65, 0.5)
+ll_grid <- expand.grid(lat = lat_seq, lon = lon_seq, KEEP.OUT.ATTRS = FALSE)
+```
 
-torn_8099 <- merge(torn_8099, doy_prob, by = c("MONTH", "DAY"), all = TRUE, sort = FALSE)
+For each day identify the 0.5 degree boxes/grids which experienced tornadoes. For some tornadoes both the beginning and ending lat-lon values are available. Interpolate between the beginning and ending coordinates and identify all the 0.5 degree grids corresponding to these interpolated points.
+
+```{r}
+torn_8099 <- torn_8099[, c("SLAT", "SLON", "ELAT", "ELON", "LENGTH", "id")]
+str(torn_8099)
 ```
 
