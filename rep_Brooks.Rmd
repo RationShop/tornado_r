@@ -134,6 +134,8 @@ Estimate probability of a tornado day for a leap year, consistent with Brooks et
 
 ```{r}
 torn_8099 <- subset(torn, YEAR >= 1980 & YEAR <= 1999)
+torn_8099 <- subset(torn_8099, !(SLAT == 0 | SLON == 0))
+
 doy <- unique(torn_8099$DATE)
 doy <- substr(doy, 6, 10)
 doy <- paste0("2012-", doy)
@@ -154,7 +156,7 @@ doy_prob$prob <- doy_prob$freq / doy_prob$span
 
 # add 0s for missing days
 miss_days <- data.frame(doy = as.character(seq(1:366)),
-                        date = seq(as.Date("2012-01-01"), as.Date("2012-12-31"), by = "day"),
+                        DATE = seq(as.Date("2012-01-01"), as.Date("2012-12-31"), by = "day"),
                         stringsAsFactors = FALSE)
 doy_prob <- merge(doy_prob, miss_days, by = "doy", all = TRUE, sort = FALSE)
 doy_prob$prob[is.na(doy_prob$prob)] <- 0
@@ -162,7 +164,7 @@ doy_prob$freq[is.na(doy_prob$freq)] <- 0
 doy_prob$span[is.na(doy_prob$span)] <- time_span
 
 # discard "2012"
-doy_prob$date <- substr(doy_prob$date, 6, 10)
+doy_prob$DATE <- substr(doy_prob$DATE, 6, 10)
 
 head(doy_prob)                         
 summary(doy_prob)
@@ -219,18 +221,151 @@ print(gfx_line)
 
 ### Figure 4, Spatial Smoothing
 
-Create a uniform lat-lon grid of 0.5 degrees spanning the mainland US. Brooks et al used a uniform grid of 80-km. But for ease of computation, visualization and storage a 0.5 degree grid is used. The results from this approach will be compared with those from Brooks et al, and if needed, a different spatial grid would be adopted.
+Select relevant data for spatial smoothing and subsequent analysis. Add temporal smoothed info to the torn 1980-99 dataset.
+
+```{r}
+torn_8099$DATE <- substr(torn_8099$DATE, 6, 10) # discard year
+doy_prob <- doy_prob[, c("doy", "freq", "DATE", "freq_smooth15")]
+torn_8099 <- merge(torn_8099, doy_prob, by = "DATE", all = TRUE, sort = FALSE)
+torn_8099 <- torn_8099[, c("DATE", "SLAT", "SLON", "ELAT", "ELON", "LENGTH", 
+                           "id", "doy", "freq", "freq_smooth15")]
+# convert doy from char to int
+torn_8099$doy <- as.numeric(torn_8099$doy)
+
+str(torn_8099)
+```
+
+Create a uniform lat-lon matrix/grid of 0.5 degrees spanning the mainland US. Brooks et al used a uniform grid of 80-km. But for ease of computation, visualization and storage a 0.5 degree grid is used. The results from this approach will be compared with those from Brooks et al, and if needed, a different spatial grid could be used.
 
 ```{r}
 lat_seq <- seq(24, 50, 0.5)
 lon_seq <- seq(-125, -65, 0.5)
-ll_grid <- expand.grid(lat = lat_seq, lon = lon_seq, KEEP.OUT.ATTRS = FALSE)
+ll_mat <- matrix(data = 0, nrow = length(lat_seq) * length(lon_seq), ncol = 366, byrow = TRUE)
 ```
 
 For each day identify the 0.5 degree boxes/grids which experienced tornadoes. For some tornadoes both the beginning and ending lat-lon values are available. Interpolate between the beginning and ending coordinates and identify all the 0.5 degree grids corresponding to these interpolated points.
 
+Function which takes two points (lat and lon for each point) and returns the 0.5 degree grids associated with these two points and also those points lying on a straight line between them. The function returns a vector of strings, of the form "aa _ bb", where "aa" is the index in "lat seq" and "bb" is the index in "lon seq".
+
 ```{r}
-torn_8099 <- torn_8099[, c("SLAT", "SLON", "ELAT", "ELON", "LENGTH", "id")]
-str(torn_8099)
+Fn_Identify_Grids <- function(coord_vec) {
+  begLat <- coord_vec[1]
+  begLon <- coord_vec[2]
+  endLat <- coord_vec[3]
+  endLon <- coord_vec[4]
+  
+  if (!(begLat == 0 | begLon == 0 | sum(any(is.na(coord_vec))) > 0)) {
+  
+    out_list <- list()
+  
+    # indices of beginning point in the lat-lon grid
+    out_list <- c(out_list, 
+                  paste0(findInterval(begLat, lat_seq), "_", findInterval(begLon, lon_seq)))
+    
+    if (endLat != 0 & endLon != 0) {
+      # indices of ending point in the lat-lon grid
+      out_list <- c(out_list, 
+                    paste0(findInterval(endLat, lat_seq), "_", findInterval(endLon, lon_seq)))
+      
+      # indices of in-between points
+      # interpolate by making cuts at approx 5-km intervals
+      if (endLat > begLat) {
+        bet_lats <- seq(begLat, endLat, 0.05)
+      } else {
+        bet_lats <- seq(begLat, endLat, -0.05)
+      }
+      
+      if (endLon > begLon) {
+        bet_lons <- seq(begLon, endLon, 0.05) 
+      } else {
+        bet_lons <- seq(begLon, endLon, -0.05)
+      }
+      bet_lats <- findInterval(bet_lats, lat_seq)
+      bet_lons <- findInterval(bet_lons, lon_seq)
+      bet_indices <- paste0(bet_lats, "_", bet_lons)
+      out_list <- c(out_list, bet_indices)
+    } 
+    
+    # identify unique indices
+    out_list <- unlist(out_list, use.names = FALSE)
+    out_list <- unique(out_list)
+    
+    return (out_list)
+  } else {
+    return (NA)
+  }
+}
+```
+
+Use the above function to identify the grids with tornado occurrences for each day of the year.
+
+```{r}
+for (eachDoy in c(1:366)) {
+  # data for each doy
+  torn_doy <- subset(torn_8099, doy == eachDoy)
+  torn_doy <- as.matrix(torn_doy[, c("SLAT", "SLON", "ELAT", "ELON", "freq_smooth15")])
+  
+  # grids corresp to all lat-lon pairs for the doy
+  doy_grids <- apply(torn_doy, 1, FUN = Fn_Identify_Grids)
+  if (sum(any(is.na(doy_grids))) == 0) {
+    doy_grids <- unique(unlist(doy_grids, use.names = FALSE))
+    
+    # convert these indices to locations in the lat-lon matrix
+    ll_index <- do.call("rbind", strsplit(doy_grids, "_"))
+    ll_index <- as.matrix(ll_index)
+    ll_index <- apply(ll_index, c(1, 2), FUN = as.numeric)
+    ll_index <- ll_index[, 2] + (ll_index[, 1] - 1) * length(lon_seq)
+    
+    # populate the parent matrix, when there is an occurence, with the smoothed
+    # temporal frequency
+    ll_mat[c(ll_index), eachDoy] <- unique(torn_doy[, "freq_smooth15"])
+  }
+}
+```
+
+Function to compute distance between 2 points on a sphere from their longitudes and latitudes
+
+```{r}
+## from http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
+earthRad <- 6371.0 ## volumetric mean radius of earth in km
+
+deg2rad  <- pi/180.0 #factor to convert degrees to radians
+rad2deg  <- 1.0/deg2rad #factor to convert radians to degrees
+
+Fn_Haversine_Distance <- function(lat1, lon1, lat2, lon2) {
+  ## inputs in degrees
+  x1 <- lon1*deg2rad
+  y1 <- lat1*deg2rad
+  x2 <- lon2*deg2rad
+  y2 <- lat2*deg2rad
+  
+  term1 <- (sin((y1-y2)/2))**2
+  term2 <- cos(y1) * cos(y2) * (sin((x1-x2)/2))**2
+  term3 <- term1 + term2
+  
+  #   #from http://en.wikipedia.org/wiki/Haversine_formula
+  #   dist  <- earthRad * 2 * asin(sqrt(term3))
+  #from http://www.movable-type.co.uk/scripts/latlong.html
+  dist  <- earthRad * 2 * atan2(sqrt(term3), sqrt(1-term3))
+  
+  return (dist)
+}
+
+```
+
+Calculate spatial weights, using Equation 2.
+
+```{r}
+wts_vec <- rep(0, length(lat_seq) * length(lon_seq))
+dist_mat <- matrix(0, nrow = length(lat_seq), ncol = length(lon_seq), byrow = TRUE)
+ll_df <- expand.grid(lon = lon_seq, lat = lat_seq, KEEP.OUT.ATTRS = TRUE)
+for (eachRow in 1:length(lat_seq)) {
+  for (eachCol in 1:length(lon_seq)) {
+    dist_vec <- Fn_Haversine_Distance(lat_seq[eachRow], lon_seq[eachCol], ll_df$lat, ll_df$lon)
+    for (eachDoy in c(1:366)) {
+      wts_vec[eachCol + (eachRow - 1) * length(lon_seq)] <- 0
+    }
+  }
+}
 ```
 
