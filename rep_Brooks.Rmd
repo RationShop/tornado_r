@@ -376,7 +376,7 @@ for (eachRow in 1:length(lat_seq)) {
   for (eachCol in 1:length(lon_seq)) {
     index <- eachCol + (eachRow - 1) * length(lon_seq)
     for (eachDoy in c(1:366)) {
-      space_mat[index, eachDoy] <- sum(ll_mat[index, eachDoy] * 
+      space_mat[index, eachDoy] <- sum(ll_mat[, eachDoy] * 
                                          exp(-0.5 * (dist_mat[index, ] / sigma_x)^2))
       space_mat[index, eachDoy] <- space_mat[index, eachDoy] / (2 * pi * (sigma_x^2))
     }
