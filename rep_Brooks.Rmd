@@ -370,34 +370,12 @@ for (eachDoy in c(1:366)) {
 }
 ```
 
-Function to compute distance between 2 points on a sphere from their longitudes and latitudes
+Function to compute distance between 2 points on a equidistant grid.
 
-```{r, eval = FALSE}
-# from http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
-earthRad <- 6371.0 # volumetric mean radius of earth in km
-
-deg2rad  <- pi / 180.0 # factor to convert degrees to radians
-rad2deg  <- 1.0 / deg2rad # factor to convert radians to degrees
-
-Fn_Haversine_Distance <- function(lat1, lon1, lat2, lon2) {
-  ## inputs in degrees
-  x1 <- lon1*deg2rad
-  y1 <- lat1*deg2rad
-  x2 <- lon2*deg2rad
-  y2 <- lat2*deg2rad
-  
-  term1 <- (sin((y1-y2)/2))^2
-  term2 <- cos(y1) * cos(y2) * (sin((x1-x2)/2))^2
-  term3 <- term1 + term2
-  
-  #   #from http://en.wikipedia.org/wiki/Haversine_formula
-  #   dist  <- earthRad * 2 * asin(sqrt(term3))
-  #from http://www.movable-type.co.uk/scripts/latlong.html
-  dist  <- earthRad * 2 * atan2(sqrt(term3), sqrt(1-term3))
-  
-  return (dist)
+```{r}
+Fn_Compute_Distance <- function(y1, x1, y2, x2) {
+  return (sqrt((y1 - y2)^2 + (x1 - x2)^2))
 }
-
 ```
 
 Calculate spatial weights, using Equation 2.
@@ -410,7 +388,7 @@ dist_mat <- matrix(0,
                    byrow = TRUE)
 for (eachRow in 1:length(lat_seq)) {
   for (eachCol in 1:length(lon_seq)) {
-    dist_mat[eachCol + (eachRow - 1) * length(lon_seq), ] <- Fn_Haversine_Distance(lat_seq[eachRow], lon_seq[eachCol], ll_df$lat, ll_df$lon)
+    dist_mat[eachCol + (eachRow - 1) * length(lon_seq), ] <- Fn_Compute_Distance(lat_seq[eachRow], lon_seq[eachCol], ll_df$lat, ll_df$lon)
   }
 }
 
