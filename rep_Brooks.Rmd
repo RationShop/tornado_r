@@ -280,10 +280,10 @@ Function below takes two points (lat and lon for each point) and returns the 80-
 
 ```{r}
 Fn_Identify_Grids <- function(torn_data) {
-  begLat <- torn_data[1]
-  begLon <- torn_data[2]
-  endLat <- torn_data[3]
-  endLon <- torn_data[4]
+  begLat <- torn_data["SLAT"]
+  begLon <- torn_data["SLON"]
+  endLat <- torn_data["ELAT"]
+  endLon <- torn_data["ELON"]
   
   torn_data <- data.frame(SLAT = begLat, SLON = begLon, ELAT = endLat, ELON = endLon)
   
@@ -297,7 +297,7 @@ Fn_Identify_Grids <- function(torn_data) {
                                proj = CRS(ll_proj))
     sloc <- spTransform(sloc, CRS(new_proj))
     sloc <- sloc@coords
-
+    
     out_list <- c(out_list, 
                   paste0(findInterval(sloc[2], y_breaks), "_", findInterval(sloc[1], x_breaks)))
     
@@ -360,6 +360,7 @@ for (eachDoy in c(1:366)) {
     ll_index <- do.call("rbind", strsplit(doy_grids, "_"))
     ll_index <- as.matrix(ll_index)
     ll_index <- apply(ll_index, c(1, 2), FUN = as.numeric)
+    ll_index[, 1] <- ifelse(ll_index[, 1] < 1, 1, ll_index[, 1])
     ll_index <- ll_index[, 2] + (ll_index[, 1] - 1) * length(x_breaks)
     
     # populate the parent matrix, when there is an occurence, with the smoothed
