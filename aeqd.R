@@ -57,5 +57,6 @@ usa_map <- spTransform(usa_map, CRS(new_proj))
 png("xyz.png")
 plot(usa_rast, axes = FALSE, bty = "n", fg = "white")
 plot(usa_map, add = TRUE)
+contour(usa_rast, add = TRUE)
 garbage <- dev.off()
 

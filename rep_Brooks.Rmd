@@ -235,54 +235,99 @@ torn_8099$doy <- as.numeric(torn_8099$doy)
 str(torn_8099)
 ```
 
-Create a uniform lat-lon matrix/grid of 0.5 degrees spanning the mainland US. Brooks et al used a uniform grid of 80-km. But for ease of computation, visualization and storage a 0.5 degree grid is used. The results from this approach will be compared with those from Brooks et al, and if needed, a different spatial grid could be used.
+Create a uniform grid of 80-km spanning the mainland US, consistent with Brooks et al.
 
 ```{r}
-lat_seq <- seq(24, 50, 2)
-lon_seq <- seq(-125, -65, 2)
-ll_mat <- matrix(data = 0, nrow = length(lat_seq) * length(lon_seq), ncol = 366, byrow = TRUE)
+library(raster)
+library(maptools)
+library(rgdal)
+library(maps)
+
+# lat-lon bounds of the lower 48 states
+lat_seq <- c(24, 50)
+lon_seq <- c(-125, -65)
+ll_df <- expand.grid(lat = lat_seq, lon = lon_seq, KEEP.OUT.ATTRS = TRUE)
+
+# lat-lon and equidistant projection info
+ll_proj <- "+proj=longlat +datum=WGS84"
+new_proj <- "+proj=aeqd +lat_0=40 +lon_0=-95 +units=m"
+
+new_ref_locs <- SpatialPointsDataFrame(coords = ll_df[, c("lon", "lat")], 
+                                       data = ll_df, 
+                                       proj = CRS(ll_proj))
+
+# project lat-lons to aeqd
+new_ref_locs <- spTransform(new_ref_locs, CRS(new_proj))
+
+# create raster in aeqd
+cell_res <- 80000 # raster resolution in meters 
+new_bounds <- apply(new_ref_locs@coords, 2, range)
+x_breaks <- seq(new_bounds[1, "lon"], new_bounds[2, "lon"], cell_res)
+y_breaks <- seq(new_bounds[1, "lat"], new_bounds[2, "lat"], cell_res)
+
+usa_rast <- raster(matrix(1:(length(x_breaks)*length(y_breaks)), nrow = length(y_breaks)), 
+                   xmn = min(x_breaks), 
+                   xmx = max(x_breaks), 
+                   ymn = min(y_breaks),
+                   ymx = max(y_breaks), 
+                   crs = new_proj) 
+
 ```
 
-For each day identify the 0.5 degree boxes/grids which experienced tornadoes. For some tornadoes both the beginning and ending lat-lon values are available. Interpolate between the beginning and ending coordinates and identify all the 0.5 degree grids corresponding to these interpolated points.
+For each day identify the grids in the 80-km raster which experienced tornadoes. First, convert beginning and ending lat-lon values for each tornado segment to the equidistant projection. For some tornadoes both the beginning and ending lat-lon values are available. Interpolate between the beginning and ending coordinates and identify all the grids corresponding to these interpolated points.
 
-Function which takes two points (lat and lon for each point) and returns the 0.5 degree grids associated with these two points and also those points lying on a straight line between them. The function returns a vector of strings, of the form "aa _ bb", where "aa" is the index in "lat seq" and "bb" is the index in "lon seq".
+Function below takes two points (lat and lon for each point) and returns the 80-km grids associated with these two points and also those points lying on a straight line between them. The function returns a vector of strings, of the form "aa _ bb", where "aa" is the index in "x breaks" and "bb" is the index in "y breaks".
 
 ```{r}
-Fn_Identify_Grids <- function(coord_vec) {
-  begLat <- coord_vec[1]
-  begLon <- coord_vec[2]
-  endLat <- coord_vec[3]
-  endLon <- coord_vec[4]
+Fn_Identify_Grids <- function(torn_data) {
+  begLat <- torn_data[1]
+  begLon <- torn_data[2]
+  endLat <- torn_data[3]
+  endLon <- torn_data[4]
   
-  if (!(begLat == 0 | begLon == 0 | sum(any(is.na(coord_vec))) > 0)) {
+  torn_data <- data.frame(SLAT = begLat, SLON = begLon, ELAT = endLat, ELON = endLon)
+  
+  if (!(begLat == 0 | begLon == 0 | sum(any(is.na(torn_data))) > 0)) {
   
     out_list <- list()
   
-    # indices of beginning point in the lat-lon grid
+    # indices of beginning lat-lon, corresp to "SLON" & "SLAT"
+    sloc <- SpatialPointsDataFrame(coords = torn_data[, c("SLON", "SLAT")],
+                               data = torn_data, 
+                               proj = CRS(ll_proj))
+    sloc <- spTransform(sloc, CRS(new_proj))
+    sloc <- sloc@coords
+
     out_list <- c(out_list, 
-                  paste0(findInterval(begLat, lat_seq), "_", findInterval(begLon, lon_seq)))
+                  paste0(findInterval(sloc[2], y_breaks), "_", findInterval(sloc[1], x_breaks)))
     
     if (endLat != 0 & endLon != 0) {
-      # indices of ending point in the lat-lon grid
+      # indices of ending lat-lon, corresp to "ELON" & "ELAT"
+      eloc <- SpatialPointsDataFrame(coords = torn_data[, c("ELON", "ELAT")],
+                               data = torn_data, 
+                               proj = CRS(ll_proj))
+      eloc <- spTransform(eloc, CRS(new_proj))
+      eloc <- eloc@coords
+      
       out_list <- c(out_list, 
-                    paste0(findInterval(endLat, lat_seq), "_", findInterval(endLon, lon_seq)))
-      
+                  paste0(findInterval(eloc[2], y_breaks), "_", findInterval(eloc[1], x_breaks)))
+
       # indices of in-between points
-      # interpolate by making cuts at approx 5-km intervals
-      if (endLat > begLat) {
-        bet_lats <- seq(begLat, endLat, 0.05)
+      # interpolate by making cuts at 5-km intervals
+      if (eloc[2] > sloc[2]) {
+        bet_y <- seq(sloc[2], eloc[2], 5000)
       } else {
-        bet_lats <- seq(begLat, endLat, -0.05)
+        bet_y <- seq(sloc[2], eloc[2], -5000)
       }
       
-      if (endLon > begLon) {
-        bet_lons <- seq(begLon, endLon, 0.05) 
+      if (eloc[1] > sloc[1]) {
+        bet_x <- seq(sloc[1], eloc[1], 5000) 
       } else {
-        bet_lons <- seq(begLon, endLon, -0.05)
+        bet_x <- seq(sloc[1], eloc[1], -5000)
       }
-      bet_lats <- findInterval(bet_lats, lat_seq)
-      bet_lons <- findInterval(bet_lons, lon_seq)
-      bet_indices <- paste0(bet_lats, "_", bet_lons)
+      bet_y <- findInterval(bet_y, y_breaks)
+      bet_x <- findInterval(bet_x, x_breaks)
+      bet_indices <- paste0(bet_y, "_", bet_x)
       out_list <- c(out_list, bet_indices)
     } 
     
@@ -300,6 +345,7 @@ Fn_Identify_Grids <- function(coord_vec) {
 Use the above function to identify the grids with tornado occurrences for each day of the year.
 
 ```{r}
+space_raw <- matrix(data = 0, nrow = length(y_breaks) * length(x_breaks), ncol = 366)
 for (eachDoy in c(1:366)) {
   # data for each doy
   torn_doy <- subset(torn_8099, doy == eachDoy)
@@ -314,18 +360,18 @@ for (eachDoy in c(1:366)) {
     ll_index <- do.call("rbind", strsplit(doy_grids, "_"))
     ll_index <- as.matrix(ll_index)
     ll_index <- apply(ll_index, c(1, 2), FUN = as.numeric)
-    ll_index <- ll_index[, 2] + (ll_index[, 1] - 1) * length(lon_seq)
+    ll_index <- ll_index[, 2] + (ll_index[, 1] - 1) * length(x_breaks)
     
     # populate the parent matrix, when there is an occurence, with the smoothed
     # temporal frequency
-    ll_mat[c(ll_index), eachDoy] <- unique(torn_doy[, "freq_smooth15"])
+    space_raw[c(ll_index), eachDoy] <- unique(torn_doy[, "freq_smooth15"])
   }
 }
 ```
 
 Function to compute distance between 2 points on a sphere from their longitudes and latitudes
 
-```{r}
+```{r, eval = FALSE}
 # from http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
 earthRad <- 6371.0 # volumetric mean radius of earth in km
 
@@ -355,7 +401,7 @@ Fn_Haversine_Distance <- function(lat1, lon1, lat2, lon2) {
 
 Calculate spatial weights, using Equation 2.
 
-```{r}
+```{r, eval = FALSE}
 ll_df <- expand.grid(lon = lon_seq, lat = lat_seq, KEEP.OUT.ATTRS = TRUE)
 dist_mat <- matrix(0, 
                    nrow = length(lat_seq) * length(lon_seq), 
@@ -385,7 +431,7 @@ for (eachRow in 1:length(lat_seq)) {
 ```
 
 
-```{r}
+```{r, eval = FALSE}
 ann_avg <- apply(space_mat, 1, FUN = sum)
 summary(ann_avg)
 ```
