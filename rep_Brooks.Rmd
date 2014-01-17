@@ -186,8 +186,13 @@ doy_prob <- rbind(doy_prob[184:366, ], doy_prob, doy_prob[1:183, ])
 
 sigma_t <- 5 # temporal smoother
 time_wts5 <- exp(-0.5 * (c(-183:182)/ sigma_t)^2) / (sqrt(2 * pi) * sigma_t)
+# ensure weights sum to 1
+sum(time_wts5)
+
 sigma_t <- 15 # temporal smoother
 time_wts15 <- exp(-0.5 * (c(-183:182)/ sigma_t)^2) / (sqrt(2 * pi) * sigma_t)
+# ensure weights sum to 1
+sum(time_wts15)
 
 doy_prob$freq_smooth5 <- 0
 doy_prob$freq_smooth15 <- 0
@@ -276,9 +281,16 @@ ae_locs <- Fn_Get_Projected_Locs(ll_df, "lon", "lat", ll_proj, ae_proj)
 
 # set the 80-km grid resolution and dimensions in aeqd
 aegrid_res <- 80000 # raster resolution in meters 
+
 aegrid_bounds <- apply(ae_locs@coords, 2, range)
+aegrid_bounds
+
 aegrid_xcoords <- seq(aegrid_bounds[1, "lon"], aegrid_bounds[2, "lon"], aegrid_res)
 aegrid_ycoords <- seq(aegrid_bounds[1, "lat"], aegrid_bounds[2, "lat"], aegrid_res)
+
+aegrid_xcoords
+aegrid_ycoords
+
 aeX <- length(aegrid_xcoords)
 aeY <- length(aegrid_ycoords)
 
@@ -389,40 +401,70 @@ for (eachDoy in c(1:366)) {
 }
 ```
 
-Function to compute the euclidean distance between 2 points on a equidistant grid.
+Calculate spatial weights, using Equation 2. This equation in the paper is incomplete! - the gaussian 2-D KDE integral was represented as a double integral, but the delta x and delta y terms for the I and J directions have been left out. Also in equation 2 of the paper, the left hand side should be f subscript x,y,n and not probability p. When f is divided by the time span (1980-99, or 20 years) one gets the probability.
+
+Check the KDE weights - make sure they add up to 1.
 
 ```{r}
+# Function to compute the euclidean distance between 2 points
 Fn_Compute_Distance <- function(y1, x1, y2, x2) {
   return (sqrt((y1 - y2)^2 + (x1 - x2)^2))
 }
-```
 
-Calculate spatial weights, using Equation 2.
-
-```{r}
+# matrices used in distance calcs
 xindx_mat <- matrix(rep(c(1:aeX), aeY), nrow = aeY, byrow = TRUE)
 yindx_mat <- matrix(rep(c(1:aeY), aeX), nrow = aeY, byrow = FALSE)
 
-space_smooth <- array(data = 0, dim = c(aeY, aeX, 366))
+aegrid_res_km <- aegrid_res / 1000 # grid resolution in km
 sigma_x <- 120 # spatial smoother in km
+
+for (eachRow in c(1, 2, 5, 15, aeY)) {
+  for (eachCol in c(1, 2, 5, 38, aeX)) {
+    # calculate distance matrix
+    dist_mat <- aegrid_res_km * Fn_Compute_Distance(yindx_mat, xindx_mat, 
+                                                          eachRow, eachCol)
+    # calculate sum of weights
+    space_wts <- exp(-0.5 * (dist_mat / sigma_x)^2) * (aegrid_res_km ^ 2) / 
+      (2 * pi * (sigma_x ^ 2))                         
+    
+    cat("Y = ", eachRow, ", X = ", eachCol, ", sum = ", round(sum(space_wts), 2), "\n")
+  }
+}
+```
+
+The weights add up to 1 for most of the grids, except the ones on or very close to the edge of the grids. For these grids, scale the weights such that their sum is 1.
+
+```{r}
+space_smooth <- array(data = 0, dim = c(aeY, aeX, 366))
 
 for (eachRow in 1:aeY) {
   for (eachCol in 1:aeX) {
     # calculate distance matrix
-    dist_mat <- (aegrid_res / 1000) * Fn_Compute_Distance(yindx_mat, xindx_mat, 
+    dist_mat <- aegrid_res_km * Fn_Compute_Distance(yindx_mat, xindx_mat, 
                                                           eachRow, eachCol) 
     # spatial smoothing, equation 2                   
-    for (eachDoy in c(180:180)) {
-      space_smooth[eachRow, eachCol, eachDoy] <- sum(space_raw[, , eachDoy] * exp(-0.5 * (dist_mat / sigma_x)^2)) / (2 * pi * (sigma_x^2))                                         
+    for (eachDoy in c(153:153)) {
+      # calculate weights
+      space_wts <- exp(-0.5 * (dist_mat / sigma_x)^2) * (aegrid_res_km ^ 2) / 
+        (2 * pi * (sigma_x ^ 2))
+      # ensure weights add up to 1
+      space_wts <- space_wts / sum(space_wts)
+
+      # smooth frequencies
+      space_smooth[eachRow, eachCol, eachDoy] <- sum(space_raw[, , eachDoy] * space_wts)                                         
     }
   }
 }
 
 ```
 
+Some diagnostic plots on smoothed spatial frequency.
 
 ```{r}
-ann_avg <- space_smooth[,,180]
-ann_avg <- apply(ann_avg, c(1,2), FUN = sum)
-summary(ann_avg)
+# some plots for June 1
+range(space_raw[,,153])
+range(space_smooth[,,153])
+plot(raster(space_raw[,,153]))
+plot(raster(space_smooth[,,153]))
 ```
+
