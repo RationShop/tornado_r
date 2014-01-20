@@ -144,7 +144,7 @@ doy_freq <- as.numeric(as.Date(doy)) - ref_Dec31_2011
 str(doy_freq)
 ```
 
-Convert doy_freq to probability and check for probs outside of 0-1 interval. Also prob for Feb 29 should be based on number of leap years during the data time period and not the entire time span, consistent with Brooks et al.
+Convert "doy _ freq" to probability and check for probs outside of 0-1 interval. Also prob for Feb 29 should be based on number of leap years during the data time period and not the entire time span, consistent with Brooks et al.
 
 ```{r}
 time_span <- 1999 - 1980 + 1
@@ -179,7 +179,7 @@ gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
 print(gfx_line)
 ```
 
-Temporal smoothing, similar to Equation 1. Test temporal smoothing using sigma values of of 5 and 15 days. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Split the 366 days into two 183-day long portions. Add bottom 183-day portion to the top of the data and the top 183-day portion to the bottom of the data. The result is a 732-day long data. Apply frequency smoothing to the middle 366 day of this 732-day data.
+Temporal smoothing, similar to Equation 1. Test temporal smoothing using sigma values of of 5 and 15 days. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Split the 366 days into two 183-day long portions. Add bottom 183-day portion to the top of the data and the top 183-day portion to the bottom of the data. The result is a 732-day long data. Apply frequency smoothing to the middle 366 days of this 732-day data.
 
 ```{r}
 doy_prob <- rbind(doy_prob[184:366, ], doy_prob, doy_prob[1:183, ])
@@ -249,13 +249,13 @@ library(rgdal)
 library(maps)
 
 # lat-lon bounds of the lower 48 states
-lat_seq <- c(24, 50)
+lat_seq <- c(20, 50)
 lon_seq <- c(-125, -65)
 ll_df <- expand.grid(lat = lat_seq, lon = lon_seq, KEEP.OUT.ATTRS = TRUE)
 
 # lat-lon and azimuthal equidistant projection info
 ll_proj <- "+proj=longlat +datum=WGS84"
-ae_proj <- "+proj=aeqd +lat_0=40 +lon_0=-95 +units=m"
+ae_proj <- "+proj=aeqd +lat_0=35 +lon_0=-95 +units=m"
 ```
 
 Function to project from geographic to aeqd. Input is a data frame and the name of the columns associated with lon and lat, and the input and output projection info for CRS.
@@ -293,14 +293,6 @@ aegrid_ycoords
 
 aeX <- length(aegrid_xcoords)
 aeY <- length(aegrid_ycoords)
-
-# usa_rast <- raster(matrix(1:(aeX*aeY), nrow = aeY), 
-#                    xmn = min(aegrid_xcoords), 
-#                    xmx = max(aegrid_xcoords), 
-#                    ymn = min(aegrid_ycoords),
-#                    ymx = max(aegrid_ycoords), 
-#                    crs = ae_proj) 
-
 ```
 
 For each day identify the grids in the 80-km raster which experienced tornadoes. First, convert beginning and ending lat-lon values for each tornado segment to the equidistant projection. For some tornadoes both the beginning and ending lat-lon values are available. Interpolate between the beginning and ending coordinates and identify all the grids corresponding to these interpolated points.
@@ -403,7 +395,7 @@ for (eachDoy in c(1:366)) {
 
 Calculate spatial weights, using Equation 2. This equation in the paper is incomplete! - the gaussian 2-D KDE integral was represented as a double integral, but the delta x and delta y terms for the I and J directions have been left out. Also in equation 2 of the paper, the left hand side should be f subscript x,y,n and not probability p. When f is divided by the time span (1980-99, or 20 years) one gets the probability.
 
-Check the KDE weights - make sure they add up to 1.
+Check the KDE weights for select grids in the middle of the grid and near or along the edges and ensure they add up to 1.
 
 ```{r}
 # Function to compute the euclidean distance between 2 points
@@ -443,7 +435,7 @@ for (eachRow in 1:aeY) {
     dist_mat <- aegrid_res_km * Fn_Compute_Distance(yindx_mat, xindx_mat, 
                                                           eachRow, eachCol) 
     # spatial smoothing, equation 2                   
-    for (eachDoy in c(153:153)) {
+    for (eachDoy in c(1:366)) {
       # calculate weights
       space_wts <- exp(-0.5 * (dist_mat / sigma_x)^2) * (aegrid_res_km ^ 2) / 
         (2 * pi * (sigma_x ^ 2))
@@ -461,10 +453,65 @@ for (eachRow in 1:aeY) {
 Some diagnostic plots on smoothed spatial frequency.
 
 ```{r}
-# some plots for June 1
-range(space_raw[,,153])
-range(space_smooth[,,153])
-plot(raster(space_raw[,,153]))
-plot(raster(space_smooth[,,153]))
+# map of the lower 48 in aeqd
+usa_map <- map("state", xlim = range(lon_seq), ylim = range(lat_seq), plot = FALSE)
+usa_map <- map2SpatialLines(usa_map)
+proj4string(usa_map) <- CRS(ll_proj)
+usa_map <- spTransform(usa_map, CRS(ae_proj))
+
+Fn_Draw_Spatial_Freq <- function(doy, gfx_name, smoothed = TRUE, cumulative = FALSE) {
+  if (cumulative) {
+    doy_rast <- apply(space_smooth[,,c(1:doy)], c(1,2), FUN = sum)
+    if (!smoothed) {
+      doy_rast <- apply(space_raw[,,c(1:doy)], c(1,2), FUN = sum)
+    }
+  } else {
+    doy_rast <- space_smooth[,,doy]
+    if (!smoothed) {
+      doy_rast <- space_raw[,,doy]
+    }
+  }
+  
+  # flip the matrix from S-N to N-S to counteract "raster" package behavior
+  doy_rast <- doy_rast[c(nrow(doy_rast):1), ]
+  # plot tornado days per year for cumulative
+  if (cumulative) {
+    doy_rast <- doy_rast / 366
+    # if tornado days are less than 0.25, set to NA
+    doy_rast[doy_rast < 0.25] <- NA
+  }
+  
+  doy_rast <- raster(doy_rast, 
+                     xmn = min(aegrid_xcoords), 
+                     xmx = max(aegrid_xcoords), 
+                     ymn = min(aegrid_ycoords),
+                     ymx = max(aegrid_ycoords), 
+                     crs = ae_proj) 
+  
+  png(paste0(gfx_name, "_", doy, ".png"), width = ncol(doy_rast)*10, height = nrow(doy_rast)*10)
+  if (cumulative) {
+    leg_breaks <- seq(0.25, 1.25, 0.25)
+    plot(doy_rast, breaks = leg_breaks, col = rev(rainbow(4)), lab.breaks = leg_breaks, zlim = range(leg_breaks), axes = FALSE, main = "Number of Tornadoes Per Year, 1980-99")
+  } else {
+    plot(doy_rast, axes = FALSE)
+  }
+  plot(usa_map, add = TRUE)
+  if (smoothed) {
+    if (cumulative) {
+      contour(doy_rast, levels = leg_breaks, add = TRUE, axes = FALSE)
+    } else {
+      contour(doy_rast, add = TRUE, axes = FALSE)
+    }
+  }
+  garbage <- dev.off()  
+}
+
+# tornado days per year
+Fn_Draw_Spatial_Freq(366, "doy_cumul_smooth", smoothed = TRUE, cumulative = TRUE)
+
+# jun 1
+Fn_Draw_Spatial_Freq(153, "doy_indiv_smooth", smoothed = TRUE, cumulative = FALSE)
+Fn_Draw_Spatial_Freq(153, "doy_indiv_raw", smoothed = FALSE, cumulative = FALSE)
+
 ```
 
