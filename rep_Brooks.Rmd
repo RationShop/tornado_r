@@ -7,6 +7,11 @@ Read raw data add column names similar to those used by [Elsner et al 2013](http
 ```{r}
 library(plyr)
 library(ggplot2)
+library(chron)
+library(raster)
+library(maptools)
+library(rgdal)
+library(maps)
 
 torn <- read.csv("data/1950-2012_torn.csv", 
                  header = FALSE, 
@@ -31,10 +36,10 @@ if (nrow(dec31) > 0 & nrow(jan01) > 0) {
 torn$id <- paste(torn$YEAR, torn$MONTH, torn$OM, torn$NS, sep = "-")
 ```
 
-Brooks et al used data from 1955-99 and excludd Alaska, Hawaii and Puerto Rico. 
+Brooks et al used data from 1955-99 and excluded Alaska, Hawaii and Puerto Rico. 
 
 ```{r}
-torn <- subset(torn, YEAR %in% seq(1955, 1999))
+# torn <- subset(torn, YEAR %in% seq(1955, 1999))
 torn <- subset(torn, !(STATE %in% c("AK", "HI", "PR")))
 
 str(torn)
@@ -99,8 +104,11 @@ gfx_line <- gfx_line + geom_point()
 gfx_line <- gfx_line + ylim(c(0, 1600))
 gfx_line <- gfx_line + stat_smooth(method = lm, se = FALSE)
 gfx_line <- gfx_line + xlab("Year") + ylab("Tornadoes")
-print(gfx_line)
+png("gfx_brooks2003_fig1.png")
+plot(gfx_line)
+garbage <- dev.off()
 ```
+![figure 1] [brooks1]
 
 ### Figure 2
 Number of torado days per year, similar to those in Figure 2 of Brooks et al.
@@ -124,19 +132,23 @@ gfx_line <- gfx_line + geom_point()
 gfx_line <- gfx_line + ylim(c(0, 250))
 gfx_line <- gfx_line + stat_smooth(method = lm, se = FALSE)
 gfx_line <- gfx_line + xlab("Year") + ylab("Tornado Days")
-print(gfx_line)
+png("gfx_brooks2003_fig2.png")
+plot(gfx_line)
+garbage <- dev.off()
 ```
-
+![figure 2] [brooks2]
 
 ### Figure 3, Temporal Smoothing
 
-Estimate probability of a tornado day for a leap year, consistent with Brooks et al. Estimate the number of a time a day of the year (doy) occurs in the period 1980-1999. Use 2012 as a reference leap year for the inclusion of Feb 29. One could accomplish the below task using "chron" or "lubridate" package; but, for now I am trying to avoid the importing of these packages.
+Estimate probability of a tornado day for a leap year, consistent with Brooks et al. Estimate the number of a time a day of the year (doy) occurs in the period 1980-1999. Use 2012 as a reference leap year for the inclusion of Feb 29 (does not matter which leap year is chosen).
 
 ```{r}
-torn_8099 <- subset(torn, YEAR >= 1980 & YEAR <= 1999)
-torn_8099 <- subset(torn_8099, !(SLAT == 0 | SLON == 0))
+beg_year <- 1980
+end_year <- 1999
+torn_brooks <- subset(torn, YEAR >= beg_year & YEAR <= end_year)
+torn_brooks <- subset(torn_brooks, !(SLAT == 0 | SLON == 0))
 
-doy <- unique(torn_8099$DATE)
+doy <- unique(torn_brooks$DATE)
 doy <- substr(doy, 6, 10)
 doy <- paste0("2012-", doy)
 ref_Dec31_2011 <- as.numeric(as.Date("2011-12-31"))
@@ -147,11 +159,12 @@ str(doy_freq)
 Convert "doy _ freq" to probability and check for probs outside of 0-1 interval. Also prob for Feb 29 should be based on number of leap years during the data time period and not the entire time span, consistent with Brooks et al.
 
 ```{r}
-time_span <- 1999 - 1980 + 1
+time_span <- length(beg_year:end_year)
 doy_prob <- as.data.frame(table(doy_freq), stringsAsFactors = FALSE)
 colnames(doy_prob) <- c("doy", "freq")
-# fix for Feb 29, 5 leap years in 1980-1999
-doy_prob$span <- ifelse(doy_prob$doy != 60, time_span, 5)
+# fix for Feb 29, leap years in 1980-1999
+num_leap <- sum(leap.year(beg_year:end_year))
+doy_prob$span <- ifelse(doy_prob$doy != 60, time_span, num_leap)
 doy_prob$prob <- doy_prob$freq / doy_prob$span
 
 # add 0s for missing days
@@ -176,7 +189,7 @@ Probability of a tornado day, unsmoothed, similar to Figure 3 of Brooks et al.
 gfx_line <- ggplot(data = doy_prob, aes(x = as.numeric(doy), y = prob, group = 1))
 gfx_line <- gfx_line + geom_point()
 gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
-print(gfx_line)
+# print(gfx_line)
 ```
 
 Temporal smoothing, similar to Equation 1. Test temporal smoothing using sigma values of of 5 and 15 days. Make the data periodic to avoid problems with beginning and ending of data, cosistent with Brooks et al. Split the 366 days into two 183-day long portions. Add bottom 183-day portion to the top of the data and the top 183-day portion to the bottom of the data. The result is a 732-day long data. Apply frequency smoothing to the middle 366 days of this 732-day data.
@@ -221,33 +234,32 @@ gfx_line <- gfx_line + geom_line(aes(y = prob_smooth5, colour = "red"))
 gfx_line <- gfx_line + geom_line(aes(y = prob_smooth15, colour = "blue"))
 gfx_line <- gfx_line + theme(legend.position = "none")
 gfx_line <- gfx_line + xlab("Day of Year") + ylab("Probability")
-print(gfx_line)
+png("gfx_brooks2003_fig3.png")
+plot(gfx_line)
+garbage <- dev.off()
+
 ```
+![figure 3] [brooks3]
 
 ### Figure 4, Spatial Smoothing
 
 Select relevant data for spatial smoothing and subsequent analysis. Add temporal smoothed info to the torn 1980-99 dataset.
 
 ```{r}
-torn_8099$DATE <- substr(torn_8099$DATE, 6, 10) # discard year
+torn_brooks$DATE <- substr(torn_brooks$DATE, 6, 10) # discard year
 doy_prob <- doy_prob[, c("doy", "freq", "DATE", "freq_smooth15")]
-torn_8099 <- merge(torn_8099, doy_prob, by = "DATE", all = TRUE, sort = FALSE)
-torn_8099 <- torn_8099[, c("DATE", "SLAT", "SLON", "ELAT", "ELON", "LENGTH", 
+torn_brooks <- merge(torn_brooks, doy_prob, by = "DATE", all = TRUE, sort = FALSE)
+torn_brooks <- torn_brooks[, c("DATE", "SLAT", "SLON", "ELAT", "ELON", "LENGTH", 
                            "id", "doy", "freq", "freq_smooth15")]
 # convert doy from char to int
-torn_8099$doy <- as.numeric(torn_8099$doy)
+torn_brooks$doy <- as.numeric(torn_brooks$doy)
 
-str(torn_8099)
+str(torn_brooks)
 ```
 
 Create a uniform grid of 80-km spanning the mainland US, consistent with Brooks et al. This 80-km grid will be in azimuthal equidistant projection. Assume 40 lat and -95 lon to be the reference for this new projection.
 
 ```{r}
-library(raster)
-library(maptools)
-library(rgdal)
-library(maps)
-
 # lat-lon bounds of the lower 48 states
 lat_seq <- c(20, 50)
 lon_seq <- c(-125, -65)
@@ -367,7 +379,7 @@ Use the above function to identify the grids with tornado occurrences for each d
 space_raw <- array(data = 0, dim = c(aeY, aeX, 366))
 for (eachDoy in c(1:366)) {
   # data for each doy
-  torn_doy <- subset(torn_8099, doy == eachDoy)
+  torn_doy <- subset(torn_brooks, doy == eachDoy)
   torn_doy <- as.matrix(torn_doy[, c("SLAT", "SLON", "ELAT", "ELON", "freq_smooth15")])
   
   # grids corresp to all lat-lon pairs for the doy
@@ -393,7 +405,7 @@ for (eachDoy in c(1:366)) {
 }
 ```
 
-Calculate spatial weights, using Equation 2. This equation in the paper is incomplete! - the gaussian 2-D KDE integral was represented as a double integral, but the delta x and delta y terms for the I and J directions have been left out. Also in equation 2 of the paper, the left hand side should be f subscript x,y,n and not probability p. When f is divided by the time span (1980-99, or 20 years) one gets the probability.
+Calculate spatial weights, using Equation 2. This equation in the paper is incomplete! - the gaussian 2-D KDE integral was represented as a double integral, but the delta x and delta y terms for the I and J directions have been left out. Also in equation 2 of the paper, the left hand side should be f subscript x,y,n and not probability p. 
 
 Check the KDE weights for select grids in the middle of the grid and near or along the edges and ensure they add up to 1.
 
@@ -488,10 +500,16 @@ Fn_Draw_Spatial_Freq <- function(doy, gfx_name, smoothed = TRUE, cumulative = FA
                      ymx = max(aegrid_ycoords), 
                      crs = ae_proj) 
   
-  png(paste0(gfx_name, "_", doy, ".png"), width = ncol(doy_rast)*10, height = nrow(doy_rast)*10)
+  png(paste0(gfx_name, ".png"), width = ncol(doy_rast)*10, height = nrow(doy_rast)*10)
   if (cumulative) {
-    leg_breaks <- seq(0.25, 1.25, 0.25)
-    plot(doy_rast, breaks = leg_breaks, col = rev(rainbow(4)), lab.breaks = leg_breaks, zlim = range(leg_breaks), axes = FALSE, main = "Number of Tornadoes Per Year, 1980-99")
+    leg_breaks <- c(0.25, seq(0.5, 3, 0.5))
+    plot(doy_rast, 
+         breaks = leg_breaks, 
+         col = rev(rainbow(12)), 
+         lab.breaks = leg_breaks, 
+         zlim = range(leg_breaks), 
+         axes = FALSE, 
+         main = paste0("Number of Tornadoes Per Year, ", beg_year, "-", end_year))
   } else {
     plot(doy_rast, axes = FALSE)
   }
@@ -507,11 +525,16 @@ Fn_Draw_Spatial_Freq <- function(doy, gfx_name, smoothed = TRUE, cumulative = FA
 }
 
 # tornado days per year
-Fn_Draw_Spatial_Freq(366, "doy_cumul_smooth", smoothed = TRUE, cumulative = TRUE)
+Fn_Draw_Spatial_Freq(366, "gfx_brooks2003_fig4", smoothed = TRUE, cumulative = TRUE)
 
-# jun 1
-Fn_Draw_Spatial_Freq(153, "doy_indiv_smooth", smoothed = TRUE, cumulative = FALSE)
-Fn_Draw_Spatial_Freq(153, "doy_indiv_raw", smoothed = FALSE, cumulative = FALSE)
+# # jun 1
+# Fn_Draw_Spatial_Freq(153, "doy_indiv_smooth", smoothed = TRUE, cumulative = FALSE)
+# Fn_Draw_Spatial_Freq(153, "doy_indiv_raw", smoothed = FALSE, cumulative = FALSE)
 
 ```
+![figure 4] [brooks4]
 
+[brooks1]: gfx_brooks2003_fig1.png "figure 1"
+[brooks2]: gfx_brooks2003_fig2.png "figure 2"
+[brooks3]: gfx_brooks2003_fig3.png "figure 3"
+[brooks4]: gfx_brooks2003_fig4.png "figure 4"
