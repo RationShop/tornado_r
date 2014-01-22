@@ -102,8 +102,55 @@ gfx_line <- ggplot(data = events_by_scale,
                    aes(x = FSCALE, y = N_unique/10, group = time_cat))
 gfx_line <- gfx_line + geom_line(aes(colour = time_cat))
 gfx_line <- gfx_line + geom_point(aes(colour = time_cat))
-gfx_line <- gfx_line + ylab("Number") + scale_y_log10(breaks = 10**seq(-1,3))
-gfx_line <- gfx_line + theme(legend.title=element_blank())
+gfx_line <- gfx_line + ylab("Number") + scale_y_log10(breaks = 10**seq(-1, 3))
+gfx_line <- gfx_line + theme(legend.title = element_blank())
 plot(gfx_line)
 ```
 
+### Figure 3
+
+Counts of tornadoes by FSCALE and region. Consistent with Brooks and Doswell, split mainland US into four regions.
+
+```{r}
+levels(as.factor(torn$STATE))
+torn <- subset(torn, !(STATE %in% c("AK", "HI", "PR")))
+Fn_Assign_Region <- function(state_name) {
+  if (state_name %in% c("OK", "KS", "NE")) {
+    return ("Central US")
+  } else if (state_name %in% c("FL")) {
+    return ("Florida")
+  } else if (state_name %in% c("WA", "OR", "CA", "MT", "ID", "NV", "UT", "CO", 
+                               "WY", "NM", "AZ", "TX", "ND", "SD")) {
+    return ("Western US")
+  } else {
+    return ("Eastern US")
+  }
+}
+
+torn$Region <- sapply(torn$STATE, FUN = Fn_Assign_Region, USE.NAMES = FALSE)
+```
+
+Tornadoes by FSCALE and Region.
+
+```{r}
+events_by_region <- ddply(.data = subset(torn, YEAR %in% c(1950:1995) & 
+                                          FSCALE %in% c(0:5)),                                              
+                          .variables = .(FSCALE, Region),                                               
+                         .fun = count_unique_tornadoes,                                              
+                         monthly_stats = FALSE)
+
+events_by_region
+```
+
+Set F2 counts to 100, consitent with Brooks and Doswell, and scale the counts in the other categories accordingly.
+
+
+```{r}
+gfx_line <- ggplot(data = events_by_region, 
+                   aes(x = FSCALE, y = N_unique, group = Region))
+gfx_line <- gfx_line + geom_line(aes(colour = Region))
+gfx_line <- gfx_line + geom_point(aes(colour = Region))
+gfx_line <- gfx_line + ylab("Number") + scale_y_log10(breaks = 10**seq(-1, 3))
+gfx_line <- gfx_line + theme(legend.title = element_blank())
+plot(gfx_line)
+```
