@@ -7,6 +7,7 @@ Read raw data add column names similar to those used by [Elsner et al 2013](http
 ```{r}
 library(plyr)
 library(ggplot2)
+library(reshape2)
 
 torn <- read.csv("data/1950-2012_torn.csv", 
                  header = FALSE, 
@@ -135,19 +136,24 @@ Tornadoes by FSCALE and Region.
 ```{r}
 events_by_region <- ddply(.data = subset(torn, YEAR %in% c(1950:1995) & 
                                           FSCALE %in% c(0:5)),                                              
-                          .variables = .(FSCALE, Region),                                               
-                         .fun = count_unique_tornadoes,                                              
-                         monthly_stats = FALSE)
+                          .variables = .(FSCALE, Region),                                                                        
+                          .fun = count_unique_tornadoes,                                                                       
+                          monthly_stats = FALSE)
 
 events_by_region
 ```
 
 Set F2 counts to 100, consitent with Brooks and Doswell, and scale the counts in the other categories accordingly.
 
-
 ```{r}
+events_by_region <- dcast(events_by_region, Region ~ FSCALE, value.var = "N_unique")
+region_names <- events_by_region$Region
+events_by_region <- events_by_region[, c(-1)] * (100 /events_by_region[, "2"])
+events_by_region$Region <- region_names
+events_by_region <- melt(events_by_region, id.vars=c("Region"))
+
 gfx_line <- ggplot(data = events_by_region, 
-                   aes(x = FSCALE, y = N_unique, group = Region))
+                   aes(x = variable, y = value, group = Region))
 gfx_line <- gfx_line + geom_line(aes(colour = Region))
 gfx_line <- gfx_line + geom_point(aes(colour = Region))
 gfx_line <- gfx_line + ylab("Number") + scale_y_log10(breaks = 10**seq(-1, 3))
